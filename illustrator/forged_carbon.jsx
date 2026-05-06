@@ -1,13 +1,28 @@
-// Forged Carbon vectorize - Illustrator menu script
-// Pairs with the Python tool installed by install.sh at ~/.forge_carbon/
+// Forged Carbon vectorize - Illustrator menu script (macOS)
 //
-// Usage: File > Scripts > Other Script... -> select this file
-// Or copy to /Applications/Adobe Illustrator */Presets.localized/*/Scripts/
+// Pairs with the Python tool installed by install.sh at ~/.forge_carbon/.
+// Illustrator's JSX cannot run shell commands directly (no `system` object),
+// so we delegate to a small AppleScript runner.app that install.sh builds.
+//
+// Pipeline: JSX writes ~/.forge_carbon/request.sh, launches runner.app,
+// polls for output SVG, then opens it in Illustrator.
 
 #target illustrator
 
 (function () {
     var INSTALL = "~/.forge_carbon";
+
+    function P(p) { return new File(p); }
+
+    var runner = P(INSTALL + "/runner.app");
+    if (!runner.exists) {
+        alert(
+            "runner.app 가 없습니다.\n"
+            + "터미널에서 install.sh 를 다시 실행하세요:\n\n"
+            + "  cd <repo>\n  ./install.sh"
+        );
+        return;
+    }
 
     // ---------- 1. pick image ----------
     var inputFile = File.openDialog(
@@ -69,17 +84,23 @@
     var baseName = inputFile.name.replace(/\.[^.]+$/, "");
     var outPath = outDir + "/" + baseName + "_forged.svg";
     var outFile = new File(outPath);
+    var doneFile = new File(outPath + ".done");
+    var failFile = new File(outPath + ".fail");
     var logPath = "/tmp/forged_carbon.log";
 
-    // ---------- 4. command ----------
-    var py = INSTALL + "/.venv/bin/python";
-    var script = INSTALL + "/forge_vectorize.py";
+    if (outFile.exists) outFile.remove();
+    if (doneFile.exists) doneFile.remove();
+    if (failFile.exists) failFile.remove();
 
+    // ---------- 4. compose request.sh ----------
     function shq(s) {
         return "'" + String(s).replace(/'/g, "'\\''") + "'";
     }
 
-    var parts = [
+    var py = INSTALL + "/.venv/bin/python";
+    var script = INSTALL + "/forge_vectorize.py";
+
+    var pyParts = [
         shq(py), shq(script),
         shq(inputFile.fsName),
         "-o", shq(outPath),
@@ -90,25 +111,50 @@
         "--fiber-hi", fiberHi.text,
         "--bg", bg.text
     ];
-    if (chipFills.value) parts.push("--draw-chip-fills");
-    if (clahe.value) parts.push("--clahe");
+    if (chipFills.value) pyParts.push("--draw-chip-fills");
+    if (clahe.value) pyParts.push("--clahe");
 
-    var inner = parts.join(" ") + " > " + shq(logPath) + " 2>&1";
-    var fullCmd = "/bin/bash -lc " + shq(inner);
+    var lines = [
+        "#!/bin/bash",
+        "set +e",
+        pyParts.join(" ") + " > " + shq(logPath) + " 2>&1",
+        "if [ $? -eq 0 ]; then touch " + shq(outPath + ".done") + ";"
+        + " else touch " + shq(outPath + ".fail") + "; fi"
+    ];
 
-    // ---------- 5. run ----------
+    var requestPath = INSTALL.replace(/^~/, Folder.userData.parent.fsName)
+        + "/request.sh";
+    // Folder.userData = ~/Library/Application Support; .parent = ~/Library; not what we want.
+    // Easier: use Folder.userHome
+    requestPath = Folder("~").fsName + "/.forge_carbon/request.sh";
+    var requestFile = new File(requestPath);
+    requestFile.encoding = "UTF-8";
+    requestFile.open("w");
+    requestFile.write(lines.join("\n") + "\n");
+    requestFile.close();
+
+    // ---------- 5. launch runner.app and poll ----------
     var t0 = (new Date()).getTime();
-    system.callSystem(fullCmd);
+    runner.execute();
+
+    var timeoutMs = 15 * 60 * 1000; // 15 min
+    var deadline = t0 + timeoutMs;
+    while ((new Date()).getTime() < deadline) {
+        if (doneFile.exists || failFile.exists) break;
+        $.sleep(500);
+    }
     var elapsed = (((new Date()).getTime() - t0) / 1000).toFixed(1);
 
     // ---------- 6. result ----------
-    if (outFile.exists) {
-        if (openResult.value) {
+    if (doneFile.exists) {
+        doneFile.remove();
+        if (openResult.value && outFile.exists) {
             try { app.open(outFile); }
-            catch (e) { alert("SVG 생성 OK 이지만 자동 열기 실패:\n" + e); }
+            catch (e) { alert("자동 열기 실패: " + e); }
         }
         alert("완료 (" + elapsed + "초)\n\n" + outPath);
     } else {
+        if (failFile.exists) failFile.remove();
         var log = "";
         var lf = new File(logPath);
         if (lf.exists) {
@@ -117,11 +163,10 @@
             log = lf.read();
             lf.close();
         }
-        var tail = log.length > 1200 ? log.substring(log.length - 1200) : log;
+        var tail = log.length > 1500 ? log.substring(log.length - 1500) : log;
         alert(
-            "생성 실패. (" + elapsed + "초)\n\n"
-            + "Python 도구가 설치돼 있나요?  ~/.forge_carbon/install.sh 를 한 번 실행했는지 확인.\n\n"
-            + "로그 (말미):\n" + tail
+            "실패 또는 타임아웃 (" + elapsed + "초)\n\n"
+            + "로그 (말미):\n" + (tail || "(로그 비어 있음)")
         );
     }
 })();

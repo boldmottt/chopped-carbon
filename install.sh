@@ -30,6 +30,26 @@ fi
 ./.venv/bin/pip install --upgrade pip --quiet
 ./.venv/bin/pip install --quiet -r requirements.txt
 
+echo "==> Building AppleScript runner.app (Illustrator <-> shell bridge)"
+if command -v osacompile >/dev/null 2>&1; then
+    AS_SRC="$(mktemp /tmp/forged_runner.XXXXXX.applescript)"
+    cat > "$AS_SRC" <<'APPLESCRIPT'
+on run
+    set homeDir to POSIX path of (path to home folder)
+    set requestFile to homeDir & ".forge_carbon/request.sh"
+    try
+        do shell script "/bin/bash " & quoted form of requestFile
+    end try
+end run
+APPLESCRIPT
+    rm -rf "$INSTALL_DIR/runner.app"
+    osacompile -o "$INSTALL_DIR/runner.app" "$AS_SRC"
+    rm -f "$AS_SRC"
+    echo "    runner.app: $INSTALL_DIR/runner.app"
+else
+    echo "    WARN: osacompile not found - JSX won't be able to invoke Python."
+fi
+
 JSX_SRC="$INSTALL_DIR/illustrator/forged_carbon.jsx"
 
 echo
