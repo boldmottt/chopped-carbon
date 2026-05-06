@@ -22,14 +22,6 @@ for item in forge_carbon forge_vectorize.py requirements.txt illustrator scripts
     fi
 done
 
-echo "==> Setting up Python virtual environment"
-cd "$INSTALL_DIR"
-if [ ! -d ".venv" ]; then
-    python3 -m venv .venv
-fi
-./.venv/bin/pip install --upgrade pip --quiet
-./.venv/bin/pip install --quiet -r requirements.txt
-
 echo "==> Building AppleScript runner.app (Illustrator <-> shell bridge)"
 if command -v osacompile >/dev/null 2>&1; then
     AS_SRC="$(mktemp /tmp/forged_runner.XXXXXX.applescript)"
@@ -49,6 +41,14 @@ APPLESCRIPT
 else
     echo "    WARN: osacompile not found - JSX won't be able to invoke Python."
 fi
+
+echo "==> Setting up Python virtual environment"
+cd "$INSTALL_DIR"
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+fi
+./.venv/bin/pip install --upgrade pip --quiet --timeout 120 --retries 5
+./.venv/bin/pip install --quiet --timeout 120 --retries 5 -r requirements.txt
 
 JSX_SRC="$INSTALL_DIR/illustrator/forged_carbon.jsx"
 

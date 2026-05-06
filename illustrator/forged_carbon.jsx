@@ -10,7 +10,8 @@
 #target illustrator
 
 (function () {
-    var INSTALL = "~/.forge_carbon";
+    var HOME = Folder("~").fsName;
+    var INSTALL = HOME + "/.forge_carbon";
 
     function P(p) { return new File(p); }
 
@@ -122,12 +123,7 @@
         + " else touch " + shq(outPath + ".fail") + "; fi"
     ];
 
-    var requestPath = INSTALL.replace(/^~/, Folder.userData.parent.fsName)
-        + "/request.sh";
-    // Folder.userData = ~/Library/Application Support; .parent = ~/Library; not what we want.
-    // Easier: use Folder.userHome
-    requestPath = Folder("~").fsName + "/.forge_carbon/request.sh";
-    var requestFile = new File(requestPath);
+    var requestFile = new File(INSTALL + "/request.sh");
     requestFile.encoding = "UTF-8";
     requestFile.open("w");
     requestFile.write(lines.join("\n") + "\n");
